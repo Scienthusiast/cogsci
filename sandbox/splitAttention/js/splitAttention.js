@@ -1,9 +1,14 @@
-const CANVAS_WIDTH = 400;
-const CANVAS_HEIGHT = 400;
+const CANVAS_WIDTH = 700;
+const CANVAS_HEIGHT = 700;
 const PROPORTION_SEPARATOR = 0.1;
-const STIM_NUMBER = 4;
+const STIM_NUMBER = 5;
 const TARGET_NUMBER = 2;
 const STIM_DIAMETER = 50;
+const FRAME_DURATION = 50;
+const MAX_TRIALS = 1000;
+const VELOCITY = 4;
+const X_COLLISION = "x";
+const Y_COLLISION = "y";
 
 makeSplitAttentionStructure = (queryString, horizontal) => {
     const canvas = document.querySelector(queryString);
@@ -38,21 +43,49 @@ randInt = (min, max) => {
     return Math.floor(min + Math.random() * (max + 1 - min));
 }
 
+stimCollision = (center1, center2) => {
+    return Math.sqrt(Math.pow(center1.x - center2.x, 2) + Math.pow(center1.y - center2.y, 2)) < STIM_DIAMETER;
+}
+
+borderCollision = (center, rectangle) => {
+    if (center.x - (STIM_DIAMETER / 2) <= rectangle.start.x || center.x + (STIM_DIAMETER / 2) >= rectangle.end.x) {
+        return X_COLLISION;
+    }
+    if (center.y - (STIM_DIAMETER / 2) <= rectangle.start.y || center.y + (STIM_DIAMETER / 2) >= rectangle.end.y) {
+        return Y_COLLISION;
+    }
+    return null;
+}
+
+getNewStimPosition = (stimArray, rectangle) => {
+    let trialNumber = 1;
+    do {
+        let newCoords = {
+            x: randInt(rectangle.start.x + 1 + STIM_DIAMETER / 2, rectangle.end.x - STIM_DIAMETER / 2),
+            y: randInt(rectangle.start.y + 1 + STIM_DIAMETER / 2, rectangle.end.y - STIM_DIAMETER / 2)
+        }
+        if (!stimArray.some(stim => {return (stimCollision(stim.center, newCoords))})) {
+           return newCoords; 
+        }
+        trialNumber += 1;
+    } while (trialNumber < MAX_TRIALS)
+    return {x: 0, y: 0}
+}
+
 makeStimuli = (stimNumber, targetNumber, rectangle) => {
     const stimArray = [];
+    let targetRemaining = targetNumber;
 
     for (let i = 0; i < stimNumber; i++) {
+        const isTarget = targetRemaining > 0 ? true : false;
+        if (isTarget) targetRemaining = targetRemaining - 1;
         
-        stimArray.push(
-            {
-                center: {
-                    x: randInt(rectangle.start.x + 1 + STIM_DIAMETER / 2, rectangle.end.x - STIM_DIAMETER / 2),
-                    y: randInt(rectangle.start.y + 1 + STIM_DIAMETER / 2, rectangle.end.y - STIM_DIAMETER / 2)
-                },
-                direction: Math.random() * Math.PI * 2,
-                isTarget: true,
-            }
-        )
+        const newStim = {
+            center: getNewStimPosition(stimArray, rectangle),
+            direction: Math.random() * Math.PI * 2,
+            isTarget: isTarget,
+        }
+        stimArray.push(newStim);
     }
 
     return stimArray;
@@ -83,7 +116,30 @@ drawStimuli = ({context, rect1, rect2}) => {
     rect2.stimuli.forEach(s => drawCircle(context, s))
 }
 
-launchSimulation = (splitAttentionStructure) => {
+moveStimuli = (stim, rect) => {
+    stim.center.x += Math.cos(stim.direction) * VELOCITY;
+    stim.center.y += Math.sin(stim.direction) * VELOCITY;
+
+    const collision = borderCollision(stim.center, rect);
+    
+    // if (collision) {
+    //     stim.direction += (Math.PI / 2) % (Math.PI * 2); 
+    // }
+    // /*
+    if (collision === Y_COLLISION) {
+        stim.direction = -stim.direction; //Math.sin(s.direction);// / Math.cos(s.direction)
+    }
+    else if (collision === X_COLLISION) {
+        stim.direction += (Math.PI / 2) % (Math.PI * 2) 
+    }
+}
+
+moveAllStimuli = ({rect1, rect2}) => {
+    rect1.stimuli.forEach(s => {moveStimuli(s, rect1)})
+    rect2.stimuli.forEach(s => {moveStimuli(s, rect2)})
+}
+
+drawState = (splitAttentionStructure) => {
     drawBorders(splitAttentionStructure);
     drawStimuli(splitAttentionStructure);
 }
@@ -93,4 +149,12 @@ const splitAttentionStructures = [
     makeSplitAttentionStructure("#horizontalSplit", true),
 ]
 
-splitAttentionStructures.forEach(c => launchSimulation(c));
+splitAttentionStructures.forEach(c => drawState(c));
+
+setInterval(function() {
+    splitAttentionStructures.forEach(c => {
+        c.context.clearRect(0, 0, c.canvas.width, c.canvas.height);
+        moveAllStimuli(c);
+        drawState(c);
+    })
+}, FRAME_DURATION)
